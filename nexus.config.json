@@ -1,0 +1,7 @@
+{
+    "paths": {
+        "layers": "Source/Layers",
+        "events": "Source/Events",
+        "services": "Source/Services"
+    }
+}
