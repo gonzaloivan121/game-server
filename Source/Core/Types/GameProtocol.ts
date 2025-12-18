@@ -191,3 +191,14 @@ export interface GameConfig {
      */
     FriendlyFire: boolean;
 }
+
+/**
+ * Payload sent to the client immediately after connection.
+ * @export
+ * @interface WelcomeData
+ */
+export interface WelcomeData {
+    PlayerID: UUID;
+    Message: string;
+    ServerTime: number;
+}

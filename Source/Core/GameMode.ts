@@ -1,8 +1,8 @@
-import { Log } from "@prism-dev/nexus";
+import { Vector3 } from "@xloxlolex/vector-math";
+
 import { UUID } from "crypto";
 
 import { GameState } from "./GameState";
-import { Player } from "./Types/GameProtocol";
 
 /**
  * Abstract base class for all Game Modes.
@@ -21,6 +21,15 @@ export abstract class GameMode {
      * @memberof GameMode
      */
     protected gameState!: GameState;
+
+    /**
+     * Flag to check whether the match has ended or not.
+     *
+     * @protected
+     * @type {boolean}
+     * @memberof GameMode
+     */
+    protected ended: boolean = false;
 
     /**
      * Creates an instance of `GameMode`.
@@ -71,11 +80,30 @@ export abstract class GameMode {
      * @returns {boolean} True if the attack was successful, false otherwise.
      * @memberof GameMode
      */
-    abstract HandleAttack(
+    abstract OnAttack(
         attackerId: UUID,
         targetId: UUID,
         damage: number
     ): boolean;
+
+    /**
+     * Processes the death of a player.
+     *
+     * @abstract
+     * @param {UUID} attackerId The unique identifier of the player who caused the death.
+     * @param {UUID} targetId The unique identifier of the player who died.
+     * @memberof GameMode
+     */
+    protected abstract OnDeath(attackerId: UUID, targetId: UUID): void;
+
+    /**
+     * Processed the respawn of a player.
+     *
+     * @abstract
+     * @param {UUID} playerId The unique identifier of the player who is respawning.
+     * @memberof GameMode
+     */
+    protected abstract OnRespawn(playerId: UUID): void;
 
     /**
      * Helper to check if game over conditions are met.
@@ -85,4 +113,15 @@ export abstract class GameMode {
      * @memberof GameMode
      */
     protected abstract CheckWinCondition(): void;
+
+    /**
+     * Helper to get the spawn position for a player.
+     *
+     * @protected
+     * @abstract
+     * @param {UUID} playerId The unique identifier of the player to get the spawn position for.
+     * @returns {Vector3} The spawn position.
+     * @memberof GameMode
+     */
+    protected abstract GetSpawnPosition(playerId: UUID): Vector3;
 }

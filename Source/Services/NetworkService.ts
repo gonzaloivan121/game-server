@@ -168,6 +168,19 @@ export class NetworkService extends Service {
 
         EventBus.Emit(playerConnectedEvent);
 
+        const welcomePacket = {
+            Type: "WELCOME",
+            Data: {
+                PlayerID: playerId,
+                Message: "Welcome to Nexus Server",
+                ServerTime: Date.now()
+            },
+        };
+
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(welcomePacket));
+        }
+
         return playerId;
     }
 
@@ -188,8 +201,8 @@ export class NetworkService extends Service {
 
             const playerInputEventPayload: PlayerInputEventPayload = {
                 PlayerID: playerId,
-                Action: parsed.action,
-                Data: parsed.data,
+                Action: parsed.Action,
+                Data: parsed.Data,
             };
 
             const playerInputEvent: PlayerInputEvent = new PlayerInputEvent(

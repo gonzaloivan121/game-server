@@ -1,5 +1,4 @@
 import { Layer, Log, Event, EventHandler, ServiceLocator } from "@prism-dev/nexus";
-import { Vector3 } from "@xloxlolex/vector-math";
 
 import { NetworkService } from "../Services/NetworkService";
 
@@ -8,12 +7,14 @@ import { PlayerConnectedEvent } from "../Events/PlayerConnectedEvent";
 import { PlayerDisconnectedEvent } from "../Events/PlayerDisconnectedEvent";
 import { PlayerInputEvent } from "../Events/PlayerInputEvent";
 
-import { Player } from "../Core/Player";
 import { GameState } from "../Core/GameState";
+import { GameMode } from "../Core/GameMode";
+import { TeamDeathmatch } from "../Core/Modes/TeamDeathmatch";
 
 /**
- * The `GameServerLayer` class manages the game server logic, including player connections,
- * disconnections, input handling, and world state updates.
+ * The `GameServerLayer` class manages the game server logic,
+ * including player connections, disconnections, input handling,
+ * and world state updates.
  *
  * @export
  * @class GameServerLayer
@@ -36,16 +37,16 @@ export class GameServerLayer extends Layer {
      * @type {GameState}
      * @memberof GameServerLayer
      */
-    private gameState: GameState = new GameState();
+    private gameState!: GameState;
 
     /**
-     * The map of connected players in the game world.
+     * The current game mode.
      *
      * @private
-     * @type {Map<string, Player>}
+     * @type {GameMode}
      * @memberof GameServerLayer
      */
-    private players: Map<string, Player> = new Map();
+    private gameMode!: GameMode;
 
     /**
      * Time since the last world state snapshot was sent.
@@ -63,7 +64,7 @@ export class GameServerLayer extends Layer {
      * @type {number}
      * @memberof GameServerLayer
      */
-    private snapshotRate: number = 50; // ms
+    private snapshotRate: number = 50;
 
     /**
      * Called when `GameServerLayer` is attached to the `LayerStack`.
@@ -73,7 +74,16 @@ export class GameServerLayer extends Layer {
     OnAttach(): void {
         Log.Info("GameServerLayer::OnAttach - Attaching GameServerLayer");
 
+        // Initialize the Network Service
         this.networkService = ServiceLocator.Get(NetworkService);
+
+        // Initialize the Game State
+        this.gameState = new GameState();
+
+        // Initialize the Game Mode (Injecting the state)
+        // In the future, this will be dynamic based on a lobby vote
+        // TODO: Implement lobby voting map and game mode.
+        this.gameMode = new TeamDeathmatch(this.gameState);
     }
 
     /**
@@ -92,8 +102,11 @@ export class GameServerLayer extends Layer {
      * @memberof GameServerLayer
      */
     OnUpdate(ts: number): void {
-        this.timeSinceLastSnapshot += ts;
+        // Update Game Mode logic
+        this.gameMode.OnUpdate(ts);
 
+        // Network sync
+        this.timeSinceLastSnapshot += ts;
         if (this.timeSinceLastSnapshot >= this.snapshotRate) {
             this.BroadcastState();
             this.timeSinceLastSnapshot = 0;
@@ -143,8 +156,8 @@ export class GameServerLayer extends Layer {
     private OnPlayerConnected(event: PlayerConnectedEvent): boolean {
         const payload = event.Payload;
 
-        // Add player to game state
-        this.gameState.AddPlayer(payload.PlayerID);
+        // Add player to game mode
+        this.gameMode.OnPlayerJoin(payload.PlayerID);
 
         Log.Info(
             `GameServerLayer::OnPlayerConnected - Player ${payload.PlayerID} connected.`
@@ -165,8 +178,8 @@ export class GameServerLayer extends Layer {
     private OnPlayerDisconnected(event: PlayerDisconnectedEvent): boolean {
         const payload = event.Payload;
 
-        // Remove player from game state
-        this.gameState.RemovePlayer(payload.PlayerID);
+        // Remove player from game mode
+        this.gameMode.OnPlayerLeave(payload.PlayerID);
 
         Log.Info(
             `GameServerLayer::OnPlayerDisconnected - Player ${payload.PlayerID} disconnected`
@@ -193,10 +206,10 @@ export class GameServerLayer extends Layer {
         } else if (payload.Action === "ATTACK") {
             // Handle attack action
             if (payload.Data.TargetID) {
-                this.gameState.ApplyDamage(
+                this.gameMode.OnAttack(
                     payload.PlayerID,
                     payload.Data.TargetID,
-                    payload.Data.Damage
+                    payload.Data.Damage || 10
                 );
             }
         }

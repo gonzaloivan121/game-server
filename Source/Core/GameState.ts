@@ -1,43 +1,11 @@
 import { Log } from "@prism-dev/nexus";
 import { Vector3 } from "@xloxlolex/vector-math";
-import { Player, CreateDefaultPlayer } from "./Player";
-import { TeamID, GameConfig } from "./GameTypes";
 import { UUID } from "crypto";
+import { Player, TeamID, GameStateSnapshot } from "./Types/GameProtocol";
 
 /**
- * Interface representing a snapshot of the game state.
- *
- * @export
- * @interface GameStateSnapshot
- */
-export interface GameStateSnapshot {
-    /**
-     * Players in the game.
-     *
-     * @type {Player[]}
-     * @memberof GameStateSnapshot
-     */
-    Players: Player[];
-
-    /**
-     * Scores for each team.
-     *
-     * @type {Record<TeamID, number>}
-     * @memberof GameStateSnapshot
-     */
-    Scores: Record<TeamID, number>;
-
-    /**
-     * Timestamp of the snapshot.
-     *
-     * @type {number}
-     * @memberof GameStateSnapshot
-     */
-    Timestamp: number;
-}
-
-/**
- * Class representing the overall game state.
+ * Class representing the raw data of the game.
+ * It is manipulated by the active GameMode.
  *
  * @export
  * @class GameState
@@ -66,31 +34,30 @@ export class GameState {
     };
 
     /**
-     * Adds a new player to the game state and assigns them to a team.
-     * We balance teams by assigning the new player to the team with fewer players.
+     * Creates a new player and adds them to the game state.
      *
-     * @param {UUID} id The UUID of the player to add.
-     * @returns {Player} The newly added player.
+     * @param {UUID} id The UUID of the player.
+     * @returns {Player} The created player object.
      * @memberof GameState
      */
-    public AddPlayer(id: UUID): Player {
-        const newPlayer = CreateDefaultPlayer(id);
+    public CreatePlayer(id: UUID): Player {
+        const player: Player = {
+            ID: id,
+            Position: new Vector3(),
+            Velocity: new Vector3(),
+            Team: TeamID.None,
+            Health: 0,
+            Score: 0,
+            IsAlive: true,
+            Kills: 0,
+            Deaths: 0,
+        };
 
-        // Assign team based on current team sizes
-        const redCount = this.GetPlayersByTeam(TeamID.Red).length;
-        const blueCount = this.GetPlayersByTeam(TeamID.Blue).length;
+        this.players.set(id, player);
 
-        newPlayer.Team = redCount <= blueCount ? TeamID.Red : TeamID.Blue;
+        Log.Info(`GameState::CreatePlayer - Player ${id} joined the game.`);
 
-        // Initialize position to origin
-        newPlayer.Position = new Vector3();
-
-        this.players.set(id, newPlayer);
-        Log.Info(
-            `GameState::AddPlayer - Player ${id} joined Team ${newPlayer.Team}.`
-        );
-
-        return newPlayer;
+        return player;
     }
 
     /**
@@ -102,6 +69,27 @@ export class GameState {
     public RemovePlayer(id: UUID): void {
         this.players.delete(id);
         Log.Info(`GameState::RemovePlayer - Player ${id} left the game.`);
+    }
+
+    /**
+     * Retrieves a player by their UUID.
+     *
+     * @param {UUID} id The UUID of the player to retrieve.
+     * @returns {Player | undefined} The player object or `undefined` if not found.
+     * @memberof GameState
+     */
+    public GetPlayer(id: UUID): Player | undefined {
+        return this.players.get(id);
+    }
+
+    /**
+     * Gets all players in the game.
+     *
+     * @return {Player[]} Array of all players in the game.
+     * @memberof GameState
+     */
+    public GetAllPlayers(): Player[] {
+        return Array.from(this.players.values());
     }
 
     /**
@@ -119,123 +107,21 @@ export class GameState {
         }
     }
 
-    /**
-     * Applies damage from one player to another.
-     *
-     * @param {UUID} attackerId The UUID of the attacking player.
-     * @param {UUID} targetId The UUID of the target player.
-     * @param {number} damage The amount of damage to apply.
-     * @memberof GameState
-     */
-    public ApplyDamage(attackerId: UUID, targetId: UUID, damage: number): void {
-        const attacker = this.players.get(attackerId);
-        const target = this.players.get(targetId);
-
-        // Validate players and states
-        if (!attacker || !target) {
-            Log.Warning(
-                `GameState::ApplyDamage - Invalid attacker (${attackerId}) or target (${targetId}).`
-            );
-
+    public AddScore(team: TeamID, points: number): void {
+        if (this.scores[team] === undefined) {
+            Log.Warning(`GameState::AddScore - Invalid team ID: ${team}.`);
             return;
         }
 
-        // Prevent damage if either player is dead
-        if (!attacker.IsAlive || !target.IsAlive) {
-            Log.Warning(
-                `GameState::ApplyDamage - Attacker (${attackerId}) or target (${targetId}) is dead.`
-            );
-
-            return;
-        }
-
-        // Prevent friendly fire if disabled
-        if (!GameConfig.FriendlyFire && attacker.Team === target.Team) {
-            Log.Warning(
-                `GameState::ApplyDamage - Friendly fire is disabled. Attacker (${attackerId}) and target (${targetId}) are on the same team.`
-            );
-
-            return;
-        }
-
-        // Apply damage
-        target.Health -= damage;
-
-        Log.Info(
-            `GameState::ApplyDamage - Player ${attackerId} dealt ${damage} damage to Player ${targetId}. Remaining Health: ${target.Health}`
-        );
-
-        // Check for death
-        if (target.Health <= 0) {
-            this.HandleDeath(attacker, target);
-        }
+        this.scores[team] += points;
     }
 
-    /**
-     * Handles the death of a player.
-     *
-     * @private
-     * @param {Player} attacker The player who caused the death.
-     * @param {Player} target The player who died.
-     * @memberof GameState
-     */
-    private HandleDeath(attacker: Player, target: Player): void {
-        // Update target state
-        target.Health = 0;
-        target.IsAlive = false;
-        target.Deaths++;
-
-        // Update attacker stats
-        attacker.Kills++;
-
-        // Update team scores
-        this.scores[attacker.Team] += GameConfig.PointsPerKill;
-        attacker.Score += GameConfig.PointsPerKill;
-
-        Log.Info(
-            `GameState::HandleDeath - Player ${attacker.ID} killed Player ${target.ID}.`
-        );
-
-        // Schedule respawn
-        setTimeout(() => {
-            this.RespawnPlayer(target.ID);
-        }, GameConfig.RespawnTime);
+    public GetScore(team: TeamID): number {
+        return this.scores[team] || 0;
     }
 
-    /**
-     * Respawns a player after death.
-     *
-     * @private
-     * @param {UUID} playerId The UUID of the player to respawn.
-     * @memberof GameState
-     */
-    private RespawnPlayer(playerId: UUID): void {
-        const player = this.players.get(playerId);
-
-        if (player) {
-            player.Health = GameConfig.MaxHealth;
-            player.IsAlive = true;
-            player.Position = new Vector3();
-            player.Velocity = new Vector3();
-
-            Log.Info(
-                `GameState::RespawnPlayer - Player ${playerId} has respawned.`
-            );
-        }
-    }
-
-    /**
-     * Gets all players on a specific team.
-     *
-     * @private
-     * @param {TeamID} team The team to filter players by.
-     * @returns {Player[]} Array of players on the specified team.
-     * @memberof GameState
-     */
-    private GetPlayersByTeam(team: TeamID): Player[] {
-        return Array.from(this.players.values()).filter(
-            (player) => player.Team === team
-        );
+    public GetScores(): Record<TeamID, number> {
+        return this.scores;
     }
 
     /**
